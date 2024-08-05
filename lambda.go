@@ -19,6 +19,7 @@ const (
 	Ident
 
 	LamTerm
+    IdxTerm
 	VarTerm
 	AppTerm
 	LetTerm
@@ -101,6 +102,10 @@ type Var struct {
 	name string
 }
 
+type Index struct {
+    index uint
+}
+
 type Application struct {
 	toCall Term
 	arg    Term
@@ -141,6 +146,10 @@ func (Abstraction) etype() int {
 	return LamTerm
 }
 
+func (Index) etype() int {
+    return Ident
+}
+
 func (Var) etype() int {
 	return VarTerm
 }
@@ -168,6 +177,20 @@ func (f Abstraction) PPrint() {
 	fmt.Print(f.arg)
 	fmt.Print(".")
 	f.expr.PPrint()
+}
+
+func (i Index) printTerm(indent int) {
+	for i := 0; i < indent; i++ {
+		fmt.Print("  ")
+	}
+    fmt.Print("INDEX ")
+    fmt.Print(i)
+    fmt.Print("\n")
+}
+
+func (i Index) PPrint() {
+    fmt.Print(".")
+    fmt.Print(i)
 }
 
 func (v Var) printTerm(indent int) {
@@ -236,6 +259,13 @@ func (a Abstraction) equal(other Term) bool {
 	fvs_list = append(fvs_list, otherA.arg)
 	arg_p := newName(a.arg, fvs_list)
 	return a.expr.rename(a.arg, arg_p).equal(otherA.expr.rename(otherA.arg, arg_p))
+}
+
+func (i Index) equal(other Term) bool {
+    if other.etype() != IdxTerm {
+        return false
+    }
+    return i.index == other.(*Index).index
 }
 
 func (v Var) equal(other Term) bool {
@@ -322,6 +352,33 @@ func (f Abstraction) betaReduce(name string, arg Term) Term {
 	fvs_list = append(fvs_list, name)
 	arg_p := newName(f.arg, fvs_list)
 	return &Abstraction{arg_p, f.expr.rename(f.arg, arg_p).betaReduce(name, arg)}
+}
+
+func (i Index) execute() Term {
+	if verbose {
+		log.Println("Execute Index ", i.index)
+	}
+	return &i
+}
+
+func (i Index) freeVars(vars *FreeVarList) {
+	if verbose {
+		log.Println("Calculate FreeVars ", (*vars).fvs, " for index ", i.index)
+	}
+}
+
+func (i Index) rename(name string, to_name string) Term {
+	if verbose {
+		log.Println("Rename Index ", name, " to ", to_name)
+	}
+	return &i
+}
+
+func (i Index) betaReduce(name string, arg Term) Term {
+	if verbose {
+		log.Println("Beta Reduce Index ", i.index)
+	}
+	return &i
 }
 
 func numToAbstraction(n uint64) Term {
@@ -730,7 +787,9 @@ func main() {
 			log.Println("Opening ", args[1])
 			loadFile(args[1])
 			args = args[1:]
-		}
+		} else if args[0] == "--verbose" {
+            verbose = true
+        }
 	}
 	repl()
 }
