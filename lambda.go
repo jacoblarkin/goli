@@ -27,7 +27,7 @@ const (
 
 var (
 	environment map[string]Term = make(map[string]Term)
-	indices     []Term          = make([]Term, 0)
+	indices     []string          = make([]string, 0)
 	verbose                     = false
 	natural                     = false
 
@@ -55,7 +55,8 @@ var (
 		"snd = λp.p KI",
 		"phi = λp.pair (snd p) (succ (snd p))",
 
-		"succ = λn.λf.B f (n f)",
+		//"succ = λn.λf.B f (n f)",
+		"succ = λn.λf.λx. f (n f x)",
 		"pred = λn.fst (n phi (pair 0 0))",
 		"plus = λa.λb.a succ b",
 		"sub  = λn.λk.k pred n",
@@ -80,19 +81,12 @@ type Parser struct {
 	boundVars []string
 }
 
-type FreeVarList struct {
-	fvs map[string]struct{}
-}
-
 type Term interface {
 	etype() int
 	printTerm(indent int)
 	PPrint()
-	execute() Term
-	freeVars(vars *FreeVarList)
-	rename(name string, to_name string) Term
-	betaReduce(name string, arg Term) Term
 	equal(other Term) bool
+    beta(idx uint, s Term) Term
 }
 
 type Abstraction struct {
@@ -117,7 +111,7 @@ type Let struct {
 	expr Term
 }
 
-func newIndex(t Term) {
+func newIndex(t string) {
 	indices = append(indices, t)
 }
 
@@ -125,7 +119,7 @@ func popIndex() {
 	indices = indices[:len(indices)-1]
 }
 
-func getIndex(i uint) Term {
+func getIndex(i uint) string {
 	return indices[len(indices)-int(i)-1]
 }
 
@@ -146,38 +140,12 @@ func (p Parser) getIndex(v string) int {
 	return -1
 }
 
-func newFreeVarList() FreeVarList {
-	return FreeVarList{make(map[string]struct{})}
-}
-
-func (vars *FreeVarList) add(name string) {
-	vars.fvs[name] = struct{}{}
-}
-
-func (vars *FreeVarList) contains(name string) bool {
-	_, ok := vars.fvs[name]
-	if ok {
-		return true
-	}
-	return false
-}
-
-func (vars *FreeVarList) toList() []string {
-	ret := make([]string, len(vars.fvs)+1)
-	i := 0
-	for k := range vars.fvs {
-		ret[i] = k
-		i++
-	}
-	return ret
-}
-
 func (Abstraction) etype() int {
 	return LamTerm
 }
 
 func (Index) etype() int {
-	return Ident
+	return IdxTerm
 }
 
 func (Var) etype() int {
@@ -208,12 +176,12 @@ func (f Abstraction) PPrint() {
 	f.expr.PPrint()
 }
 
-func (i Index) printTerm(indent int) {
+func (idx Index) printTerm(indent int) {
 	for i := 0; i < indent; i++ {
 		fmt.Print("  ")
 	}
 	fmt.Print("INDEX ")
-	fmt.Print(i)
+	fmt.Print(idx)
 	fmt.Print("\n")
 }
 
@@ -271,6 +239,9 @@ func (Let) PPrint() {
 }
 
 func (a Abstraction) equal(other Term) bool {
+    if other == nil {
+        return false
+    }
 	if other.etype() != LamTerm {
 		return false
 	}
@@ -278,6 +249,9 @@ func (a Abstraction) equal(other Term) bool {
 }
 
 func (i Index) equal(other Term) bool {
+    if other == nil {
+        return false
+    }
 	if other.etype() != IdxTerm {
 		return false
 	}
@@ -285,6 +259,9 @@ func (i Index) equal(other Term) bool {
 }
 
 func (v Var) equal(other Term) bool {
+    if other == nil {
+        return false
+    }
 	if other.etype() != VarTerm {
 		return false
 	}
@@ -293,6 +270,9 @@ func (v Var) equal(other Term) bool {
 }
 
 func (a Application) equal(other Term) bool {
+    if other == nil {
+        return false
+    }
 	if other.etype() != AppTerm {
 		return false
 	}
@@ -305,94 +285,6 @@ func (Let) equal(other Term) bool {
 	return false
 }
 
-func newName(name string, names []string) string {
-	i := 0
-	for {
-		if verbose {
-			log.Println("New name of ", name, " from ", names, " i = ", i)
-		}
-		nname := name + strconv.Itoa(i)
-		found := false
-		for _, n := range names {
-			if nname == n {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nname
-		}
-		i++
-	}
-}
-
-func (f Abstraction) execute() Term {
-	if verbose {
-		log.Println("Execute Abstraction")
-	}
-	return &f
-}
-
-func (f Abstraction) freeVars(vars *FreeVarList) {
-	if verbose {
-		log.Println("Calculate FreeVars for Abstraction ", (*vars).fvs)
-	}
-	f.expr.freeVars(vars)
-}
-
-func (f Abstraction) rename(name string, to_name string) Term {
-	if verbose {
-		log.Println("Abstraction rename ", name, " to ", to_name)
-	}
-	return &Abstraction{f.expr.rename(name, to_name)}
-}
-
-func (f Abstraction) betaReduce(name string, arg Term) Term {
-	if verbose {
-		log.Println("Beta Reduce Abstraction ", name)
-	}
-	return &Abstraction{f.expr.betaReduce(name, arg)}
-}
-
-func (i Index) execute() Term {
-	if verbose {
-		log.Println("Execute Index ", i.index)
-	}
-	//return getIndex(i.index).execute()
-    if len(indices) <= int(i.index) { return &i }
-	t := getIndex(i.index)
-	if t == nil {
-		return &i
-	}
-	return t.execute()
-	//return &i
-}
-
-func (i Index) freeVars(vars *FreeVarList) {
-	if verbose {
-		log.Println("Calculate FreeVars ", (*vars).fvs, " for index ", i.index)
-	}
-}
-
-func (i Index) rename(name string, to_name string) Term {
-	if verbose {
-		log.Println("Rename Index ", name, " to ", to_name)
-	}
-	return &i
-}
-
-func (i Index) betaReduce(name string, arg Term) Term {
-	if verbose {
-		log.Println("Beta Reduce Index ", i.index)
-	}
-    if len(indices) < int(i.index) { return &i }
-	t := getIndex(i.index)
-	if t == nil {
-		return &i
-	}
-	return t.betaReduce(name, arg)
-}
-
 func numToAbstraction(n uint64) Term {
 	var expr Term
 	expr = &Index{0}
@@ -401,135 +293,117 @@ func numToAbstraction(n uint64) Term {
 	}
 	return &Abstraction{&Abstraction{expr}}
 }
-
-func (v Var) execute() Term {
-	if verbose {
-		log.Println("Execute Var ", v.name)
-	}
-	val, ok := environment[v.name]
-	if ok {
-		return val.execute()
-	}
-	if natural {
-		n, err := strconv.ParseUint(v.name, 10, 0)
-		if err == nil {
-			return numToAbstraction(n)
-		}
-	}
-	return &v
+func incIndices(idx uint, t Term) Term {
+    switch t.etype() {
+    case IdxTerm:
+        i := t.(*Index).index
+        if i >= idx {
+            return &Index{i + 1}
+        }
+        return t
+    case VarTerm:
+        return t
+    case LamTerm:
+        return &Abstraction{incIndices(idx+1, t.(*Abstraction).expr)}
+    case AppTerm:
+        return &Application{incIndices(idx, t.(*Application).toCall),
+                            incIndices(idx, t.(*Application).arg)}
+    case LetTerm:
+        return t
+    }
+    return t
 }
 
-func (v Var) freeVars(vars *FreeVarList) {
-	if verbose {
-		log.Println("Calculate FreeVars ", (*vars).fvs, " for var ", v.name)
-	}
-	if vars.contains(v.name) {
-		return
-	}
-	x, ok := environment[v.name]
-	if ok {
-		x.freeVars(vars)
-		return
-	}
-	vars.add(v.name)
+func (ab Abstraction) beta(idx uint, t Term) Term {
+    return &Abstraction{ab.expr.beta(idx + 1, incIndices(idx, t))}
 }
 
-func (v Var) rename(name string, to_name string) Term {
-	if verbose {
-		log.Println("Rename Var ", name, " to ", to_name)
-	}
-	if v.name == name {
-		return &Var{to_name}
-	}
-	return &v
+func (i Index) beta(idx uint, t Term) Term {
+    if i.index == idx {
+        return t
+    }
+    if i.index > idx {
+        return &Index{i.index - 1}
+    }
+    return &i
 }
 
-func (v Var) betaReduce(name string, arg Term) Term {
-	if verbose {
-		log.Println("Beta Reduce Var ", v.name)
-	}
-	if v.name == name {
-		return arg
-	}
-	return &v
+func (v Var) beta(idx uint, t Term) Term {
+    return &v
 }
 
-func (c Application) execute() Term {
-	if verbose {
-		log.Println("Execute Application")
-	}
-	toCall := c.toCall.execute()
-	if toCall.etype() == LamTerm {
-		lambda := toCall.(*Abstraction)
-		newIndex(c.arg)
-		val := lambda.expr.betaReduce("dummy", c.arg).execute()
-		popIndex()
-		return val
-	}
-	return &c
+func (ap Application) beta(idx uint, t Term) Term {
+    return &Application{ap.toCall.beta(idx, t), ap.arg.beta(idx, t)}
 }
 
-func (c Application) freeVars(vars *FreeVarList) {
-	if verbose {
-		log.Println("Calculate Application FreeVars ", (*vars).fvs)
-	}
-	c.toCall.freeVars(vars)
-	c.arg.freeVars(vars)
+func (a Let) beta(idx uint, t Term) Term {
+    return &a
 }
 
-func (c Application) rename(name string, to_name string) Term {
-	if verbose {
-		log.Println("Rename Application ", name, " to ", to_name)
-	}
-	return &Application{c.toCall.rename(name, to_name),
-		c.arg.rename(name, to_name)}
+func isValueType(t Term) bool {
+    switch t.etype() {
+    case LamTerm:
+        return true
+    case IdxTerm:
+        return true
+    case VarTerm:
+        _, ok := environment[t.(*Var).name]
+        return !ok
+    }
+    return false
 }
 
-func (c Application) betaReduce(name string, arg Term) Term {
-	if verbose {
-		log.Println("Beta Reduce Application ", name)
-	}
-	newIndex(nil)
-	ret := &Application{c.toCall.betaReduce(name, arg),
-		c.arg.betaReduce(name, arg)}
-	popIndex()
-	return ret
-}
-
-func (a Let) execute() Term {
-	environment[a.name] = a.expr
-	return environment[a.name]
-}
-
-func (Let) freeVars(vars *FreeVarList) {
-
-}
-
-func (Let) rename(name string, to_name string) Term {
-	return nil
-}
-
-func (Let) betaReduce(name string, value Term) Term {
-	return nil
-}
-
-func norm(term Term, c int) Term {
-	if c >= 10000 {
-		return term
-	}
-	switch t := term.execute().(type) {
-	case *Abstraction:
-		return &Abstraction{norm(t.expr, c+1)}
-	case *Index:
-		return t
-	case *Var:
-		return t
-	case *Application:
-		return &Application{norm(t.toCall, c+1), norm(t.arg, c+1)}
-	case *Let:
-		return t
-	}
-	return nil
+func norm(t Term) Term {
+    switch t.etype() {
+    case LetTerm:
+        l := t.(*Let)
+	    environment[l.name] = norm(l.expr)
+	    return environment[l.name]
+    case LamTerm:
+        return &Abstraction{norm(t.(*Abstraction).expr)}
+    case IdxTerm:
+        return t
+    case VarTerm:
+        v := t.(*Var)
+        val, ok := environment[v.name]
+        if ok {
+            return val
+        }
+        return v
+    case AppTerm:
+        ap := t.(*Application)
+        var apOld *Application = ap
+        for count := 0; count < 20000 && (count == 0 || !ap.equal(apOld)); count++ {
+            apOld = ap
+            var tNew Term
+            if ap.toCall.etype() == LamTerm && isValueType(ap.arg) {
+                if verbose {
+                    log.Println("norm lambda application")
+                }
+                tNew = ap.toCall.(*Abstraction).expr.beta(0, ap.arg)
+            } else if ap.toCall.etype() == LamTerm {
+                tNew = ap.toCall.(*Abstraction).expr.beta(0, norm(ap.arg))
+            } else if isValueType(ap.toCall) {
+                if verbose {
+                    log.Println("norm value application, toCall is")
+                    ap.toCall.printTerm(0)
+                }
+                tNew = &Application{ap.toCall, norm(ap.arg)}
+            } else {
+                if verbose {
+                    log.Println("norm non-value application, toCall is ")
+                    ap.toCall.printTerm(0)
+                }
+                tNew = &Application{norm(ap.toCall), ap.arg}
+            }
+            if tNew.etype() != AppTerm {
+                return norm(tNew)
+            }
+            ap = tNew.(*Application)
+        }
+        return ap
+    }
+    return t
 }
 
 func PrintToken(tok Token) {
@@ -576,6 +450,12 @@ func (parser *Parser) parseAtom() Term {
 		if idx < 0 {
 			v := &Var{parser.toks[0].value}
 			parser.skip(1)
+            if natural {
+                n, err := strconv.ParseUint(v.name, 10, 0)
+                if err == nil {
+                    return numToAbstraction(n)
+                }
+            }
 			return v
 		}
 		parser.skip(1)
@@ -706,6 +586,7 @@ func isNatural(lam *Abstraction) bool {
 		return sec.expr.(*Index).index == 0
 	}
 	if sec.expr.etype() != AppTerm {
+        //log.Println("Looking for natural, but not an application.")
 		return false
 	}
 
@@ -721,12 +602,12 @@ func isNatural(lam *Abstraction) bool {
 			app = app.arg.(*Application)
 		}
 	}
-	return app.toCall.etype() == VarTerm && app.arg.etype() == VarTerm
+	return app.toCall.etype() == IdxTerm && app.arg.etype() == IdxTerm
 }
 
 func toNatural(lam *Abstraction) int {
 	expr := lam.expr.(*Abstraction).expr
-	if expr.etype() == VarTerm {
+	if expr.etype() == IdxTerm {
 		return 0
 	}
 	app := expr.(*Application)
@@ -759,7 +640,7 @@ func repl() {
 		if verbose {
 			expr.printTerm(0)
 		}
-		f := norm(expr, 0)
+		f := norm(expr)
 		if natural && f.etype() == LamTerm && isNatural(f.(*Abstraction)) {
 			fmt.Print(toNatural(f.(*Abstraction)))
 			fmt.Print(" (")
@@ -767,7 +648,8 @@ func repl() {
 			fmt.Print(")")
 		} else if f.etype() == LamTerm {
 			for n, e := range environment {
-				if f.equal(norm(e, 0)) {
+				//if f.equal(norm(e, 0)) {
+				if f.equal(e) {
 					fmt.Print(n, " ")
 				}
 			}
@@ -795,7 +677,7 @@ func loadFile(name string) {
 		}
 		parser := Parser{lex(scanner.Text()), make([]string, 0)}
 		expr := parser.parse()
-		norm(expr, 0)
+		norm(expr)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -808,7 +690,7 @@ func main() {
 		if args[0] == "--prelude" {
 			for _, l := range prelude {
 				parser := Parser{lex(l), make([]string, 0)}
-				norm(parser.parse(), 0)
+				norm(parser.parse())
 			}
 			natural = true
 		} else if args[0] == "--load" && len(args) > 1 {
