@@ -27,7 +27,7 @@ const (
 
 var (
 	environment map[string]Term = make(map[string]Term)
-	indices     []string          = make([]string, 0)
+	indices     []string        = make([]string, 0)
 	verbose                     = false
 	natural                     = false
 
@@ -86,7 +86,7 @@ type Term interface {
 	printTerm(indent int)
 	PPrint()
 	equal(other Term) bool
-    beta(idx uint, s Term) Term
+	beta(idx uint, s Term) Term
 }
 
 type Abstraction struct {
@@ -239,9 +239,9 @@ func (Let) PPrint() {
 }
 
 func (a Abstraction) equal(other Term) bool {
-    if other == nil {
-        return false
-    }
+	if other == nil {
+		return false
+	}
 	if other.etype() != LamTerm {
 		return false
 	}
@@ -249,9 +249,9 @@ func (a Abstraction) equal(other Term) bool {
 }
 
 func (i Index) equal(other Term) bool {
-    if other == nil {
-        return false
-    }
+	if other == nil {
+		return false
+	}
 	if other.etype() != IdxTerm {
 		return false
 	}
@@ -259,9 +259,9 @@ func (i Index) equal(other Term) bool {
 }
 
 func (v Var) equal(other Term) bool {
-    if other == nil {
-        return false
-    }
+	if other == nil {
+		return false
+	}
 	if other.etype() != VarTerm {
 		return false
 	}
@@ -270,9 +270,9 @@ func (v Var) equal(other Term) bool {
 }
 
 func (a Application) equal(other Term) bool {
-    if other == nil {
-        return false
-    }
+	if other == nil {
+		return false
+	}
 	if other.etype() != AppTerm {
 		return false
 	}
@@ -294,116 +294,116 @@ func numToAbstraction(n uint64) Term {
 	return &Abstraction{&Abstraction{expr}}
 }
 func incIndices(idx uint, t Term) Term {
-    switch t.etype() {
-    case IdxTerm:
-        i := t.(*Index).index
-        if i >= idx {
-            return &Index{i + 1}
-        }
-        return t
-    case VarTerm:
-        return t
-    case LamTerm:
-        return &Abstraction{incIndices(idx+1, t.(*Abstraction).expr)}
-    case AppTerm:
-        return &Application{incIndices(idx, t.(*Application).toCall),
-                            incIndices(idx, t.(*Application).arg)}
-    case LetTerm:
-        return t
-    }
-    return t
+	switch t.etype() {
+	case IdxTerm:
+		i := t.(*Index).index
+		if i >= idx {
+			return &Index{i + 1}
+		}
+		return t
+	case VarTerm:
+		return t
+	case LamTerm:
+		return &Abstraction{incIndices(idx+1, t.(*Abstraction).expr)}
+	case AppTerm:
+		return &Application{incIndices(idx, t.(*Application).toCall),
+			incIndices(idx, t.(*Application).arg)}
+	case LetTerm:
+		return t
+	}
+	return t
 }
 
 func (ab Abstraction) beta(idx uint, t Term) Term {
-    return &Abstraction{ab.expr.beta(idx + 1, incIndices(idx, t))}
+	return &Abstraction{ab.expr.beta(idx+1, incIndices(idx, t))}
 }
 
 func (i Index) beta(idx uint, t Term) Term {
-    if i.index == idx {
-        return t
-    }
-    if i.index > idx {
-        return &Index{i.index - 1}
-    }
-    return &i
+	if i.index == idx {
+		return t
+	}
+	if i.index > idx {
+		return &Index{i.index - 1}
+	}
+	return &i
 }
 
 func (v Var) beta(idx uint, t Term) Term {
-    return &v
+	return &v
 }
 
 func (ap Application) beta(idx uint, t Term) Term {
-    return &Application{ap.toCall.beta(idx, t), ap.arg.beta(idx, t)}
+	return &Application{ap.toCall.beta(idx, t), ap.arg.beta(idx, t)}
 }
 
 func (a Let) beta(idx uint, t Term) Term {
-    return &a
+	return &a
 }
 
 func isValueType(t Term) bool {
-    switch t.etype() {
-    case LamTerm:
-        return true
-    case IdxTerm:
-        return true
-    case VarTerm:
-        _, ok := environment[t.(*Var).name]
-        return !ok
-    }
-    return false
+	switch t.etype() {
+	case LamTerm:
+		return true
+	case IdxTerm:
+		return true
+	case VarTerm:
+		_, ok := environment[t.(*Var).name]
+		return !ok
+	}
+	return false
 }
 
 func norm(t Term) Term {
-    switch t.etype() {
-    case LetTerm:
-        l := t.(*Let)
-	    environment[l.name] = norm(l.expr)
-	    return environment[l.name]
-    case LamTerm:
-        return &Abstraction{norm(t.(*Abstraction).expr)}
-    case IdxTerm:
-        return t
-    case VarTerm:
-        v := t.(*Var)
-        val, ok := environment[v.name]
-        if ok {
-            return val
-        }
-        return v
-    case AppTerm:
-        ap := t.(*Application)
-        var apOld *Application = ap
-        for count := 0; count < 20000 && (count == 0 || !ap.equal(apOld)); count++ {
-            apOld = ap
-            var tNew Term
-            if ap.toCall.etype() == LamTerm && isValueType(ap.arg) {
-                if verbose {
-                    log.Println("norm lambda application")
-                }
-                tNew = ap.toCall.(*Abstraction).expr.beta(0, ap.arg)
-            } else if ap.toCall.etype() == LamTerm {
-                tNew = ap.toCall.(*Abstraction).expr.beta(0, norm(ap.arg))
-            } else if isValueType(ap.toCall) {
-                if verbose {
-                    log.Println("norm value application, toCall is")
-                    ap.toCall.printTerm(0)
-                }
-                tNew = &Application{ap.toCall, norm(ap.arg)}
-            } else {
-                if verbose {
-                    log.Println("norm non-value application, toCall is ")
-                    ap.toCall.printTerm(0)
-                }
-                tNew = &Application{norm(ap.toCall), ap.arg}
-            }
-            if tNew.etype() != AppTerm {
-                return norm(tNew)
-            }
-            ap = tNew.(*Application)
-        }
-        return ap
-    }
-    return t
+	switch t.etype() {
+	case LetTerm:
+		l := t.(*Let)
+		environment[l.name] = norm(l.expr)
+		return environment[l.name]
+	case LamTerm:
+		return &Abstraction{norm(t.(*Abstraction).expr)}
+	case IdxTerm:
+		return t
+	case VarTerm:
+		v := t.(*Var)
+		val, ok := environment[v.name]
+		if ok {
+			return val
+		}
+		return v
+	case AppTerm:
+		ap := t.(*Application)
+		var apOld *Application = ap
+		for count := 0; count < 20000 && (count == 0 || !ap.equal(apOld)); count++ {
+			apOld = ap
+			var tNew Term
+			if ap.toCall.etype() == LamTerm && isValueType(ap.arg) {
+				if verbose {
+					log.Println("norm lambda application")
+				}
+				tNew = ap.toCall.(*Abstraction).expr.beta(0, ap.arg)
+			} else if ap.toCall.etype() == LamTerm {
+				tNew = ap.toCall.(*Abstraction).expr.beta(0, norm(ap.arg))
+			} else if isValueType(ap.toCall) {
+				if verbose {
+					log.Println("norm value application, toCall is")
+					ap.toCall.printTerm(0)
+				}
+				tNew = &Application{ap.toCall, norm(ap.arg)}
+			} else {
+				if verbose {
+					log.Println("norm non-value application, toCall is ")
+					ap.toCall.printTerm(0)
+				}
+				tNew = &Application{norm(ap.toCall), ap.arg}
+			}
+			if tNew.etype() != AppTerm {
+				return norm(tNew)
+			}
+			ap = tNew.(*Application)
+		}
+		return ap
+	}
+	return t
 }
 
 func PrintToken(tok Token) {
@@ -450,12 +450,12 @@ func (parser *Parser) parseAtom() Term {
 		if idx < 0 {
 			v := &Var{parser.toks[0].value}
 			parser.skip(1)
-            if natural {
-                n, err := strconv.ParseUint(v.name, 10, 0)
-                if err == nil {
-                    return numToAbstraction(n)
-                }
-            }
+			if natural {
+				n, err := strconv.ParseUint(v.name, 10, 0)
+				if err == nil {
+					return numToAbstraction(n)
+				}
+			}
 			return v
 		}
 		parser.skip(1)
@@ -586,7 +586,7 @@ func isNatural(lam *Abstraction) bool {
 		return sec.expr.(*Index).index == 0
 	}
 	if sec.expr.etype() != AppTerm {
-        //log.Println("Looking for natural, but not an application.")
+		//log.Println("Looking for natural, but not an application.")
 		return false
 	}
 
